@@ -16,7 +16,8 @@ class KGGen:
     self,
     model: str = "openai/gpt-4o",
     temperature: float = 0.0,
-    api_key: str = None
+    api_key: str = None,
+    **kwargs
   ):
     """Initialize KGGen with optional model configuration
     
@@ -29,13 +30,14 @@ class KGGen:
     self.model = model
     self.temperature = temperature
     self.api_key = api_key
-    self.init_model(model, temperature, api_key)
+    self.init_model(model, temperature, api_key, **kwargs)
       
   def init_model(
     self,
     model: str = None,
     temperature: float = None,
     api_key: str = None,
+    **kwargs
   ):
     """Initialize or reinitialize the model with new parameters
     
@@ -54,9 +56,9 @@ class KGGen:
       
     # Initialize dspy LM with current settings
     if self.api_key:
-      self.lm = dspy.LM(model=self.model, api_key=self.api_key, temperature=self.temperature)
+      self.lm = dspy.LM(model=self.model, api_key=self.api_key, temperature=self.temperature, **kwargs)
     else:
-      self.lm = dspy.LM(model=self.model, temperature=self.temperature)
+      self.lm = dspy.LM(model=self.model, temperature=self.temperature, **kwargs)
       
     self.dspy.configure(lm=self.lm)
     
@@ -97,10 +99,14 @@ class KGGen:
     """
     
     # Process input data
+    # 判断传入的是否是列表
     is_conversation = isinstance(input_data, list)
+
+    # 如果传入列表
     if is_conversation:
       # Extract text from messages
       text_content = []
+      # 遍历列表
       for message in input_data:
         if not isinstance(message, dict) or 'role' not in message or 'content' not in message:
           raise ValueError("Messages must be dicts with 'role' and 'content' keys")
@@ -109,6 +115,7 @@ class KGGen:
       
       # Join with newlines to preserve message boundaries
       processed_input = "\n".join(text_content)
+    # 如果传入单个文本
     else:
       processed_input = input_data
 
@@ -118,10 +125,14 @@ class KGGen:
         temperature=temperature or self.temperature,
         api_key=api_key or self.api_key
       )
-    
+
+    # 如果没有定义块大小
     if not chunk_size:
+      # 获取实体
       entities = get_entities(self.dspy, processed_input, is_conversation=is_conversation)
+      # 获取关系
       relations = get_relations(self.dspy, processed_input, entities, is_conversation=is_conversation)
+    # 如果定义了块大小
     else:
       chunks = chunk_text(processed_input, chunk_size)
       entities = set()
@@ -141,15 +152,18 @@ class KGGen:
         entities.update(chunk_entities)
         relations.update(chunk_relations)
     
+    # 整合为图谱对象
     graph = Graph(
       entities = entities,
       relations = relations,
       edges = {relation[1] for relation in relations}
     )
     
+    # 如果需要立即聚类
     if cluster:
       graph = self.cluster(graph, context)
     
+    # 如果定义了输出文件夹
     if output_folder:
       os.makedirs(output_folder, exist_ok=True)
       output_path = os.path.join(output_folder, 'graph.json')
@@ -160,9 +174,10 @@ class KGGen:
         'edges': list(graph.edges)
       }
       
-      with open(output_path, 'w') as f:
-        json.dump(graph_dict, f, indent=2)
-      
+      with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(graph_dict, f, indent=4, ensure_ascii=False)
+    
+    # 导出图谱对象
     return graph
     
   def cluster(
